@@ -1,30 +1,31 @@
-using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using OnlineExamQuestionApi.ConsoleUI;
 using OnlineExamQuestionApi.Data;
 using OnlineExamQuestionApi.Repositories;
 using OnlineExamQuestionApi.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+// 1. Build configuration
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .Build();
 
-builder.Services.AddControllers()
-    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+// 2. Configure Dependency Injection
+var services = new ServiceCollection();
 
-builder.Services.AddOpenApi();
+services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+services.AddScoped<IQuestionRepository, QuestionRepository>();
+services.AddScoped<IQuestionService, QuestionService>();
 
-builder.Services.AddScoped<IQuestionRepository, QuestionRepository>();
-builder.Services.AddScoped<IQuestionService, QuestionService>();
+// Register the new Console UI
+services.AddTransient<AppMenu>();
 
-var app = builder.Build();
+var serviceProvider = services.BuildServiceProvider();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-}
-
-app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
-app.Run();
+// 3. Resolve the AppMenu and run the interactive loop
+var appMenu = serviceProvider.GetRequiredService<AppMenu>();
+await appMenu.RunAsync();
