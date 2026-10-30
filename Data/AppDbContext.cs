@@ -5,12 +5,54 @@ namespace OnlineExamQuestionApi.Data;
 
 public class AppDbContext : DbContext
 {
+    // 1. Parameterless constructor required by EF Core design-time tools
+    public AppDbContext() { }
+
+    // 2. Standard constructor for application Dependency Injection
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<Subject> Subjects => Set<Subject>();
     public DbSet<Topic> Topics => Set<Topic>();
     public DbSet<Question> Questions => Set<Question>();
     public DbSet<Option> Options => Set<Option>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (!optionsBuilder.IsConfigured)
+        {
+            // Fallback connection string strictly for 'dotnet ef' tooling
+            optionsBuilder.UseSqlServer("Server=(localdb)\\MSSQLLocalDB;Database=OnlineExamQuestionDb;Trusted_Connection=True;TrustServerCertificate=True");
+        }
+    }
+
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var auditEntries = new List<AuditLog>();
+
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.Entity is AuditLog || entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
+                continue;
+
+            var primaryKey = entry.Properties.FirstOrDefault(p => p.Metadata.IsPrimaryKey());
+
+            auditEntries.Add(new AuditLog
+            {
+                EntityName = entry.Entity.GetType().Name,
+                Action = entry.State.ToString(),
+                PrimaryKey = primaryKey?.CurrentValue?.ToString(),
+                Timestamp = DateTime.UtcNow
+            });
+        }
+
+        if (auditEntries.Any())
+        {
+            AuditLogs.AddRange(auditEntries);
+        }
+
+        return await base.SaveChangesAsync(cancellationToken);
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

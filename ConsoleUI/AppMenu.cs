@@ -1,16 +1,19 @@
 using OnlineExamQuestionApi.DTOs;
 using OnlineExamQuestionApi.Models;
 using OnlineExamQuestionApi.Services;
+using OnlineExamQuestionApi.Data;
 
 namespace OnlineExamQuestionApi.ConsoleUI;
 
 public class AppMenu
 {
     private readonly IQuestionService _service;
+    private readonly AppDbContext _db;
 
-    public AppMenu(IQuestionService service)
+    public AppMenu(IQuestionService service, AppDbContext db)
     {
         _service = service;
+        _db = db;
     }
 
     public async Task RunAsync()
@@ -25,25 +28,21 @@ public class AppMenu
             Console.WriteLine("1. View all questions");
             Console.WriteLine("2. Add a new question");
             Console.WriteLine("3. Delete a question");
-            Console.WriteLine("4. Exit");
+            Console.WriteLine("4. View Audit Logs");
+            Console.WriteLine("5. Exit");
             Console.WriteLine("======================================");
-            Console.Write("Select an option (1-4): ");
+            Console.Write("Select an option (1-5): ");
 
             var choice = Console.ReadLine();
 
             Console.WriteLine();
             switch (choice)
             {
-                case "1":
-                    await ViewAllQuestionsAsync();
-                    break;
-                case "2":
-                    await AddQuestionAsync();
-                    break;
-                case "3":
-                    await DeleteQuestionAsync();
-                    break;
-                case "4":
+                case "1": await ViewAllQuestionsAsync(); break;
+                case "2": await AddQuestionAsync(); break;
+                case "3": await DeleteQuestionAsync(); break;
+                case "4": await ViewAuditLogsAsync(); break;
+                case "5":
                     exit = true;
                     Console.WriteLine("Goodbye!");
                     break;
@@ -92,7 +91,7 @@ public class AppMenu
             Text = text,
             Explanation = "Added via Console App",
             Difficulty = DifficultyLevel.Medium,
-            TopicId = 1 // Defaulting to C# Basics for the console demo
+            TopicId = 1
         };
 
         Console.WriteLine("\nYou must add exactly 4 options. (One must be correct)");
@@ -139,6 +138,29 @@ public class AppMenu
             Console.WriteLine("Invalid ID format.");
         }
 
+        await PauseAsync();
+    }
+
+    private async Task ViewAuditLogsAsync()
+    {
+        Console.WriteLine("--- RECENT AUDIT LOGS ---");
+
+        var logs = _db.AuditLogs
+            .OrderByDescending(a => a.Timestamp)
+            .Take(20)
+            .ToList();
+
+        if (!logs.Any())
+        {
+            Console.WriteLine("No audit logs found.");
+        }
+        else
+        {
+            foreach (var log in logs)
+            {
+                Console.WriteLine($"[{log.Timestamp:yyyy-MM-dd HH:mm:ss}] {log.Action} {log.EntityName} (ID: {log.PrimaryKey})");
+            }
+        }
         await PauseAsync();
     }
 
