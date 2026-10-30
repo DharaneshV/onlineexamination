@@ -29,6 +29,8 @@ public class AppDbContext : DbContext
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         var auditEntries = new List<AuditLog>();
+        // Keep track of added entities so we can update their IDs after the first save
+        var addedEntries = new List<(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry Entry, AuditLog Audit)>();
 
         foreach (var entry in ChangeTracker.Entries())
         {
@@ -37,21 +39,40 @@ public class AppDbContext : DbContext
 
             var primaryKey = entry.Properties.FirstOrDefault(p => p.Metadata.IsPrimaryKey());
 
-            auditEntries.Add(new AuditLog
+            var auditLog = new AuditLog
             {
                 EntityName = entry.Entity.GetType().Name,
                 Action = entry.State.ToString(),
-                PrimaryKey = primaryKey?.CurrentValue?.ToString(),
-                Timestamp = DateTime.UtcNow
-            });
+                Timestamp = DateTime.UtcNow,
+                // If it's a new item, leave the ID null for now
+                PrimaryKey = entry.State == EntityState.Added ? null : primaryKey?.CurrentValue?.ToString()
+            };
+
+            if (entry.State == EntityState.Added)
+            {
+                addedEntries.Add((entry, auditLog));
+            }
+
+            auditEntries.Add(auditLog);
         }
 
+        // STEP 1: Save the actual entities to the database (This generates the real IDs)
+        var result = await base.SaveChangesAsync(cancellationToken);
+
+        // STEP 2: Update the missing IDs for newly added items and save the Audit Logs
         if (auditEntries.Any())
         {
+            foreach (var item in addedEntries)
+            {
+                var primaryKey = item.Entry.Properties.FirstOrDefault(p => p.Metadata.IsPrimaryKey());
+                item.Audit.PrimaryKey = primaryKey?.CurrentValue?.ToString();
+            }
+
             AuditLogs.AddRange(auditEntries);
+            await base.SaveChangesAsync(cancellationToken);
         }
 
-        return await base.SaveChangesAsync(cancellationToken);
+        return result;
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
